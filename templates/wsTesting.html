@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WebSocket Reverser</title>
+<style>
+    body {
+        background: #111;
+        color: #eee;
+        font-family: sans-serif;
+        text-align: center;
+        margin: 0;
+        padding: 2rem;
+    }
+
+    #status {
+        font-size: 1.2rem;
+        margin-bottom: 1.5rem;
+    }
+    #status.connected { color: #4caf50; }
+    #status.disconnected { color: #f44336; }
+
+    .controls {
+        margin-bottom: 3rem;
+    }
+    input[type=text] {
+        font-size: 1.5rem;
+        padding: 0.5rem;
+        width: 50%;
+        max-width: 500px;
+    }
+    button {
+        font-size: 1.5rem;
+        padding: 0.5rem 1.5rem;
+        cursor: pointer;
+    }
+
+    .panel {
+        margin-bottom: 2.5rem;
+    }
+    .label {
+        font-size: 1.3rem;
+        text-transform: uppercase;
+        letter-spacing: 0.2rem;
+        opacity: 0.6;
+        margin-bottom: 0.5rem;
+    }
+    .big-text {
+        font-size: 6rem;
+        font-weight: 900;
+        word-break: break-word;
+        line-height: 1.1;
+        min-height: 6rem;
+    }
+    #sent-text { color: #64b5f6; }
+    #received-text { color: #ffca28; }
+</style>
+</head>
+<body>
+
+    <div id="status" class="disconnected">Connecting...</div>
+
+    <div class="controls">
+        <input type="text" id="messageInput" placeholder="Type a message..." autofocus>
+        <button id="sendBtn">SEND</button>
+    </div>
+
+    <div class="panel">
+        <div class="label">Sent</div>
+        <div class="big-text" id="sent-text">--</div>
+    </div>
+
+    <div class="panel">
+        <div class="label">Received (reversed)</div>
+        <div class="big-text" id="received-text">--</div>
+    </div>
+
+<script>
+    const statusEl = document.getElementById('status');
+    const sentEl = document.getElementById('sent-text');
+    const receivedEl = document.getElementById('received-text');
+    const input = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // Build ws:// or wss:// URL based on how the page itself was loaded
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsUrl = protocol + window.location.host + '/reverse';
+
+    let socket;
+
+    function connect() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            statusEl.textContent = 'Connected to ' + wsUrl;
+            statusEl.className = 'connected';
+        };
+
+        socket.onclose = () => {
+            statusEl.textContent = 'Disconnected — retrying...';
+            statusEl.className = 'disconnected';
+            setTimeout(connect, 2000); // auto-reconnect
+        };
+
+        socket.onerror = () => {
+            socket.close();
+        };
+
+        socket.onmessage = (event) => {
+            receivedEl.textContent = event.data;
+        };
+    }
+
+    function sendMessage() {
+        const text = input.value;
+        if (!text || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(text);
+        sentEl.textContent = text;
+        input.value = '';
+        input.focus();
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    connect();
+</script>
+</body>
+</html>
