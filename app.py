@@ -20,7 +20,7 @@ def reverse(ws):
             break
         ws.send(text[::-1])
 
-# ws://<your_computer_ip>:5000/reverse
+# ws://<computer_ip>:5000/reverse
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 # Remove debug=True when in Production
