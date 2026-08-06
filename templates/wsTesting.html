@@ -1,131 +1,181 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>WebSocket Reverser</title>
-<style>
+  <meta charset="UTF-8">
+  <title>WebSocket Demo - ESP32 + Flask</title>
+  <style>
     body {
-        background: #111;
-        color: #eee;
-        font-family: sans-serif;
-        text-align: center;
-        margin: 0;
-        padding: 2rem;
+      font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #222;
     }
-
-    #status {
-        font-size: 1.2rem;
-        margin-bottom: 1.5rem;
-    }
-    #status.connected { color: #4caf50; }
-    #status.disconnected { color: #f44336; }
-
-    .controls {
-        margin-bottom: 3rem;
-    }
-    input[type=text] {
-        font-size: 1.5rem;
-        padding: 0.5rem;
-        width: 50%;
-        max-width: 500px;
-    }
-    button {
-        font-size: 1.5rem;
-        padding: 0.5rem 1.5rem;
-        cursor: pointer;
-    }
+    a.back { color: #555; text-decoration: none; font-size: 0.9em; }
+    h1 { margin-bottom: 4px; }
+    p.subtitle { color: #666; margin-top: 0; }
 
     .panel {
-        margin-bottom: 2.5rem;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 24px;
     }
-    .label {
-        font-size: 1.3rem;
-        text-transform: uppercase;
-        letter-spacing: 0.2rem;
-        opacity: 0.6;
-        margin-bottom: 0.5rem;
+    .panel h2 { margin-top: 0; font-size: 1.05em; }
+    .panel p.desc { color: #666; font-size: 0.9em; }
+
+    pre {
+      background: #f6f6f6;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 40px;
+      font-size: 0.95em;
+      overflow-x: auto;
     }
-    .big-text {
-        font-size: 6rem;
-        font-weight: 900;
-        word-break: break-word;
-        line-height: 1.1;
-        min-height: 6rem;
+    .timestamp { color: #888; font-size: 0.8em; margin-top: 4px; }
+
+    input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 0.95em;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
     }
-    #sent-text { color: #64b5f6; }
-    #received-text { color: #ffca28; }
-</style>
+    button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #2563eb;
+      color: white;
+      font-size: 0.9em;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    .status-msg { font-size: 0.85em; margin-top: 8px; }
+    .status-ok { color: #16a34a; }
+    .status-err { color: #dc2626; }
+
+    code { background: #f2f2f2; padding: 1px 5px; border-radius: 4px; }
+  </style>
 </head>
 <body>
 
-    <div id="status" class="disconnected">Connecting...</div>
+  <a class="back" href="/">&larr; Back</a>
+  <h1>WebSocket Demo</h1>
+  <p class="subtitle">
+    The ESP32 keeps one connection open at
+    <code>ws://&lt;server-ip&gt;:5000/ws</code>, so either side can send a
+    message at any moment - no "asking first" required.
+  </p>
 
-    <div class="controls">
-        <input type="text" id="messageInput" placeholder="Type a message..." autofocus>
-        <button id="sendBtn">SEND</button>
-    </div>
+  <!-- ================= Received messages ================= -->
+  <div class="panel">
+    <h2>&larr; Last message received from the ESP32</h2>
+    <p class="desc">
+      This checks the server every 2 seconds for the most recent message the
+      ESP32 has sent over the WebSocket connection.
+    </p>
+    <pre id="received-message">Waiting for a message from the ESP32...</pre>
+    <div class="timestamp" id="received-timestamp"></div>
+  </div>
 
-    <div class="panel">
-        <div class="label">Sent</div>
-        <div class="big-text" id="sent-text">--</div>
-    </div>
+  <!-- ================= Send a message ================= -->
+  <div class="panel">
+    <h2>Send a message to the ESP32 &rarr;</h2>
+    <p class="desc">
+      Type a short string below and click "Send". The server will deliver it
+      to the ESP32 the next time it checks in on the open WebSocket
+      connection (usually within about a second).
+    </p>
+    <input type="text" id="message-input" placeholder="e.g. LED_ON">
+    <br>
+    <button id="send-message-btn">Send</button>
+    <div id="send-status" class="status-msg"></div>
+  </div>
 
-    <div class="panel">
-        <div class="label">Received (reversed)</div>
-        <div class="big-text" id="received-text">--</div>
-    </div>
+  <script>
+    // ------------------------------------------------------------------
+    // Just like the HTTP demo page, this browser page does NOT open a
+    // WebSocket connection itself. Instead it uses simple HTTP polling
+    // (fetch every 2 seconds) to display what the SERVER's WebSocket
+    // route (see @sock.route("/ws") in app.py) has seen from the ESP32.
+    //
+    // The actual persistent WebSocket connection in this demo is between
+    // the Flask server and the ESP32 - that's the part your project
+    // needs, and it's fully implemented in app.py with detailed comments.
+    // ------------------------------------------------------------------
 
-<script>
-    const statusEl = document.getElementById('status');
-    const sentEl = document.getElementById('sent-text');
-    const receivedEl = document.getElementById('received-text');
-    const input = document.getElementById('messageInput');
-    const sendBtn = document.getElementById('sendBtn');
+    const receivedMessageEl = document.getElementById("received-message");
+    const receivedTimestampEl = document.getElementById("received-timestamp");
 
-    // Build ws:// or wss:// URL based on how the page itself was loaded
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const wsUrl = protocol + window.location.host + '/reverse';
+    async function refreshLastMessage() {
+      try {
+        const response = await fetch("/api/ws/last_message");
+        const data = await response.json();
 
-    let socket;
-
-    function connect() {
-        socket = new WebSocket(wsUrl);
-
-        socket.onopen = () => {
-            statusEl.textContent = 'Connected to ' + wsUrl;
-            statusEl.className = 'connected';
-        };
-
-        socket.onclose = () => {
-            statusEl.textContent = 'Disconnected — retrying...';
-            statusEl.className = 'disconnected';
-            setTimeout(connect, 2000); // auto-reconnect
-        };
-
-        socket.onerror = () => {
-            socket.close();
-        };
-
-        socket.onmessage = (event) => {
-            receivedEl.textContent = event.data;
-        };
+        if (data.text === null) {
+          receivedMessageEl.textContent = "Waiting for a message from the ESP32...";
+          receivedTimestampEl.textContent = "";
+        } else {
+          receivedMessageEl.textContent = data.text;
+          receivedTimestampEl.textContent = "Last received: " + data.received_at;
+        }
+      } catch (err) {
+        receivedMessageEl.textContent = "Error contacting server: " + err;
+      }
     }
 
-    function sendMessage() {
-        const text = input.value;
-        if (!text || socket.readyState !== WebSocket.OPEN) return;
-        socket.send(text);
-        sentEl.textContent = text;
-        input.value = '';
-        input.focus();
+    refreshLastMessage();
+    setInterval(refreshLastMessage, 2000);
+
+    // ------------------------------------------------------------------
+
+    const messageInput = document.getElementById("message-input");
+    const sendButton = document.getElementById("send-message-btn");
+    const sendStatusEl = document.getElementById("send-status");
+
+    async function sendMessage() {
+      const text = messageInput.value.trim();
+      sendStatusEl.textContent = "";
+      sendStatusEl.className = "status-msg";
+
+      if (text === "") {
+        sendStatusEl.textContent = "Type a message first.";
+        sendStatusEl.className = "status-msg status-err";
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/ws/send_message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        const result = await response.json();
+
+        if (response.ok) {
+          sendStatusEl.textContent = "Queued! It will be sent to the ESP32 shortly.";
+          sendStatusEl.className = "status-msg status-ok";
+          messageInput.value = "";
+        } else {
+          sendStatusEl.textContent = "Server error: " + (result.error || "unknown error");
+          sendStatusEl.className = "status-msg status-err";
+        }
+      } catch (err) {
+        sendStatusEl.textContent = "Error contacting server: " + err;
+        sendStatusEl.className = "status-msg status-err";
+      }
     }
 
-    sendBtn.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendMessage();
+    sendButton.addEventListener("click", sendMessage);
+    // Also allow pressing Enter in the text box to send
+    messageInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendMessage();
     });
+  </script>
 
-    connect();
-</script>
 </body>
 </html>

@@ -1,5 +1,6 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from flask_sock import Sock
+from simple_websocket import ConnectionClosed
 
 # App Initialization
 app = Flask(__name__)
@@ -11,6 +12,16 @@ def index():
     return render_template('index.html')
 
 ## WebSocket Route
+# ESP
+@sock.route('/ws')
+def wsESP32(ws):
+    while True:
+        try:
+            # Wait 1 second for message
+            message = ws.recieve(timeout=1)
+        except ConnectionClosed:
+            break
+
 # Reverses the String recieved from the Client
 @sock.route('/reverse')
 def reverse(ws):
